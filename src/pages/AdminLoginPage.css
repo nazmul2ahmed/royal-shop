@@ -1,0 +1,133 @@
+.rs-admin-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #FFF9EE;
+}
+
+.rs-admin-login-card {
+  width: 100%;
+  max-width: 430px;
+  padding: 38px;
+  background: #FFFFFF;
+  border: 1px solid #eee6d8;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(23, 77, 53, 0.09);
+}
+
+.rs-admin-login-brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.rs-admin-login-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: #174D35;
+  color: #D6A83E;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.rs-admin-login-brand p {
+  margin: 10px 0 0;
+  color: #174D35;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.rs-admin-login-card h1 {
+  margin: 0;
+  color: #174D35;
+  font-size: 27px;
+  text-align: center;
+}
+
+.rs-admin-login-subtitle {
+  margin: 9px 0 28px;
+  color: #777;
+  font-size: 14px;
+  text-align: center;
+}
+
+.rs-admin-login-card form {
+  display: flex;
+  flex-direction: column;
+}
+
+.rs-admin-login-card label {
+  margin: 0 0 8px;
+  color: #263d31;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rs-admin-login-card input {
+  width: 100%;
+  min-height: 46px;
+  margin-bottom: 20px;
+  padding: 11px 13px;
+  border: 1px solid #ddd8ce;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.rs-admin-login-card input:focus {
+  border-color: #174D35;
+  box-shadow: 0 0 0 3px rgba(23, 77, 53, 0.09);
+}
+
+.rs-admin-login-card button {
+  min-height: 47px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: #174D35;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rs-admin-login-card button:hover {
+  background: #123d2b;
+}
+
+.rs-admin-login-card button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.rs-admin-login-error {
+  margin: 0 0 16px;
+  padding: 11px;
+  border-radius: 7px;
+  background: #fff0ed;
+  color: #a52d20;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rs-admin-login-footer {
+  margin: 24px 0 0;
+  color: #888;
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .rs-admin-login-card {
+    padding: 28px 22px;
+  }
+}

@@ -1,0 +1,81 @@
+:root {
+  --royal-green: #174D35;
+  --golden-yellow: #D6A83E;
+  --soft-cream: #FFF9EE;
+  --white: #FFFFFF;
+  --text-color: #252b27;
+  --muted-color: #747b72;
+  --border-color: #eee9df;
+
+  font-family: Arial, sans-serif;
+  color: var(--text-color);
+  background: var(--soft-cream);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--soft-cream);
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+.rs-cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.rs-cart-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 50px;
+  background: #D6A83E;
+  color: #174D35;
+  font-size: 12px;
+  font-weight: 700;
+}
