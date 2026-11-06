@@ -1,5 +1,6 @@
-import { useNavigate } from 'react-router-dom';
-import { products } from '../data/products';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase.js';
 import { useCart } from '../context/CartContext.jsx';
 
 const categories = [
@@ -11,15 +12,6 @@ const categories = [
   { icon: "👕", name: "Baby Clothing", desc: "Soft little outfits" }
 ];
 
-const productIcons = {
-  'baby-lotion': '🧴',
-  'baby-shampoo': '🧼',
-  'baby-diapers': '🧷',
-  bottle: '🍼',
-  'gift-set': '🎁',
-  'baby-towel': '🧺'
-};
-
 const tips = [
   { icon: "🧴", title: "Choose gentle products", desc: "Check product ingredients and suitability before choosing baby skincare products." },
   { icon: "🛁", title: "Keep bath time comfortable", desc: "Prepare bathing essentials beforehand and always supervise your baby." },
@@ -29,12 +21,12 @@ const tips = [
 
 export const styles = `
 * { box-sizing: border-box; }
-body { margin: 0; background: #FFF9EE; color: #252b27; font-family: Arial, sans-serif; }
+body { margin: 0; background: var(--theme-bg); color: var(--theme-text); font-family: Arial, sans-serif; }
 a { text-decoration: none; color: inherit; }
 button { font: inherit; cursor: pointer; }
 .rs-container { width: min(1160px, calc(100% - 36px)); margin: auto; }
 .rs-announcement { background: #174D35; color: white; text-align: center; padding: 10px; font-size: 13px; }
-.rs-header { background: white; border-bottom: 1px solid #eee8dc; }
+.rs-header { background: var(--theme-surface); border-bottom: 1px solid var(--theme-border); }
 .rs-headrow { min-height: 82px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .rs-logo { color: #174D35; font-size: 27px; font-weight: 800; letter-spacing: -.8px; }
 .rs-logo span { color: #D6A83E; }
@@ -44,7 +36,7 @@ button { font: inherit; cursor: pointer; }
 .rs-actions { display: flex; gap: 10px; }
 .rs-outline { border: 1px solid #174D35; color: #174D35; background: white; border-radius: 22px; padding: 10px 16px; }
 .rs-cart { border: 0; color: white; background: #174D35; border-radius: 22px; padding: 10px 16px; }
-.rs-nav { border-top: 1px solid #f0ece4; display: flex; justify-content: center; gap: 38px; padding: 14px; color: #46564b; font-size: 14px; }
+.rs-nav { border-top: 1px solid var(--theme-border); display: flex; justify-content: center; gap: 38px; padding: 14px; color: var(--theme-text-muted); font-size: 14px; }
 .rs-hero { background: linear-gradient(110deg, #f3ead7, #fff9ee 60%, #e6eddf); padding: 75px 0; }
 .rs-hero-inner { display: grid; grid-template-columns: 1.2fr .8fr; align-items: center; gap: 35px; }
 .rs-eyebrow { color: #9a7626; font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
@@ -69,6 +61,7 @@ button { font: inherit; cursor: pointer; }
 .rs-products { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .rs-product { background: white; border: 1px solid #eee9df; border-radius: 15px; overflow: hidden; }
 .rs-product-art { height: 180px; display: grid; place-items: center; background: #f3f0e7; font-size: 65px; position: relative; }
+.rs-product-art img { width: 100%; height: 100%; object-fit: contain; padding: 12px; }
 .rs-tag { position: absolute; top: 12px; left: 12px; background: #e9dfc5; color: #72571d; padding: 6px 10px; border-radius: 15px; font-size: 11px; }
 .rs-product-info { padding: 17px; }
 .rs-product-info h3 { color: #174D35; font-size: 16px; margin: 0 0 8px; }
@@ -161,17 +154,95 @@ button { font: inherit; cursor: pointer; }
     grid-template-columns: 1fr;
   }
 }
-`;
 
+.rs-theme-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rs-theme-label {
+  font-size: 12px;
+  color: var(--theme-text-muted);
+}
+
+.rs-theme-select {
+  max-width: 110px;
+  padding: 9px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 18px;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rs-theme-select:focus-visible {
+  outline: 2px solid var(--theme-primary);
+  outline-offset: 2px;
+}
+`;
 function HomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addToCart } = useCart();
+  const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [featuredError, setFeaturedError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadFeaturedProducts() {
+      setFeaturedLoading(true);
+      setFeaturedError("");
+
+      const { data, error } = await supabase
+        .from("products")
+        .select("id,name,slug,category,description,price,compare_at_price,stock,image_url,tag,is_active,is_featured,sort_order")
+        .eq("is_active", true)
+        .eq("is_featured", true)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true });
+
+      if (!isMounted) return;
+
+      if (error) {
+        setFeaturedError("Featured products could not be loaded.");
+        setFeaturedProducts([]);
+      } else {
+        setFeaturedProducts((data || []).map((item) => ({
+          ...item,
+          price: Number(item.price),
+          compare_at_price: item.compare_at_price == null ? null : Number(item.compare_at_price),
+          stock: Number(item.stock),
+          sort_order: Number(item.sort_order || 0),
+        })));
+      }
+
+      setFeaturedLoading(false);
+    }
+
+    loadFeaturedProducts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (location.pathname !== '/' || location.hash !== '#tips') return;
+
+    document.getElementById('tips')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  }, [location.pathname, location.hash]);
 
   const handleOrderNow = (product) => {
     navigate('/checkout', {
       state: {
-        directCheckout: true,
-        directProductId: product.id
+        directProduct: product
       }
     });
   };
@@ -215,7 +286,7 @@ function HomePage() {
           <div className="rs-promo">
             <div>
               <h2>A little something special</h2>
-              <p>Explore our demo collection of baby-care essentials.</p>
+              <p>Explore our selected baby-care essentials.</p>
             </div>
             <a className="rs-primary" href="#products">Explore Products</a>
           </div>
@@ -225,44 +296,75 @@ function HomePage() {
           <div className="rs-container">
             <div className="rs-section-title">
               <h2>Featured Products</h2>
-              <p>A preview of the Royal Shop product collection</p>
+              <p>Discover our featured baby-care products.</p>
             </div>
             <div className="rs-products">
-              {products.map((product) => (
-                <article className="rs-product" key={product.id}>
-  <div className="rs-product-art">
-    <span className="rs-tag">{product.tag}</span>
-    {productIcons[product.id] || '🧸'}
-  </div>
-  <div className="rs-product-info">
-    <h3>{product.name}</h3>
-    <div className="rs-muted">{product.category}</div>
-    <p className="rs-price">
-      ৳{product.price}
-      <span className="rs-old">৳{product.oldPrice}</span>
-    </p>
-    <div className="rs-demo">Demo product — sample price</div>
+  {featuredLoading ? (
+    <p className="rs-muted">Loading featured products...</p>
+  ) : featuredError ? (
+    <p role="alert">{featuredError}</p>
+  ) : featuredProducts.length === 0 ? (
+    <p className="rs-muted">No featured products available right now.</p>
+  ) : (
+    featuredProducts.map((product) => (
+      <article className="rs-product" key={product.id}>
+        <Link
+          className="rs-product-art"
+          to={`/product/${encodeURIComponent(product.slug)}`}
+          aria-label={`View ${product.name}`}
+        >
+          {product.tag && <span className="rs-tag">{product.tag}</span>}
+          {product.image_url ? (
+            <img src={product.image_url} alt={product.name} />
+          ) : (
+            <span aria-hidden="true">🧸</span>
+          )}
+        </Link>
 
-    <div className="rs-home-product-actions">
-      <button
-        type="button"
-        className="rs-home-add-button"
-        onClick={() => addToCart(product)}
-      >
-        Add to Cart
-      </button>
-      <button
-        type="button"
-        className="rs-home-order-button"
-        onClick={() => handleOrderNow(product)}
-      >
-        Order Now
-      </button>
-    </div>
-  </div>
-</article>
-              ))}
-            </div>
+        <div className="rs-product-info">
+          <h3>
+            <Link to={`/product/${encodeURIComponent(product.slug)}`}>
+              {product.name}
+            </Link>
+          </h3>
+          <div className="rs-muted">{product.category}</div>
+
+          <p className="rs-price">
+            ৳{product.price.toLocaleString('en-BD')}
+            {product.compare_at_price != null && (
+              <span className="rs-old">
+                ৳{product.compare_at_price.toLocaleString('en-BD')}
+              </span>
+            )}
+          </p>
+
+          <div className="rs-muted">
+            {product.stock > 0 ? `In stock: ${product.stock}` : 'Out of stock'}
+          </div>
+
+          <div className="rs-home-product-actions">
+            <button
+              type="button"
+              className="rs-home-add-button"
+              disabled={product.stock <= 0}
+              onClick={() => addToCart(product)}
+            >
+              Add to Cart
+            </button>
+            <button
+              type="button"
+              className="rs-home-order-button"
+              disabled={product.stock <= 0}
+              onClick={() => handleOrderNow(product)}
+            >
+              Order Now
+            </button>
+          </div>
+        </div>
+      </article>
+    ))
+  )}
+</div>
           </div>
         </section>
 
@@ -317,6 +419,22 @@ function HomePage() {
 }
 
 export default HomePage;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

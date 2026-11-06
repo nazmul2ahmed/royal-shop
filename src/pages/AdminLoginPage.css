@@ -131,3 +131,34 @@
     padding: 28px 22px;
   }
 }
+
+/* Forgot Password */
+.rs-admin-login-forgot,
+.rs-admin-login-back {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #174D35;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rs-admin-login-forgot:hover,
+.rs-admin-login-back:hover {
+  color: #123d2b;
+  text-decoration: underline;
+}
+
+.rs-admin-login-card .rs-admin-login-success {
+  margin: 0 0 16px;
+  padding: 11px;
+  border-radius: 7px;
+  background: #edf8f0;
+  color: #176b36;
+  font-size: 13px;
+  line-height: 1.5;
+}

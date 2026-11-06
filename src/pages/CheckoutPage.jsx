@@ -1,13 +1,15 @@
+import { businessConfig } from '../config/business.config.js';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext.jsx';
 import { products } from '../data/products';
 import { supabase } from '../lib/supabase.js';
 import './CheckoutPage.css';
 
-const WHATSAPP_NUMBER = '8801346553350';
+const WHATSAPP_NUMBER = businessConfig.contact.whatsapp;
 const STORAGE_KEY = 'royal-shop-checkout-state';
+const PENDING_REQUEST_KEY = 'royal-shop-pending-order-request';
 
 function readCheckoutState() {
   try {
@@ -18,24 +20,93 @@ function readCheckoutState() {
   }
 }
 
+function readPendingRequest() {
+  try {
+    const saved = sessionStorage.getItem(PENDING_REQUEST_KEY);
+
+    if (!saved) return null;
+
+    const parsed = JSON.parse(saved);
+
+    const valid =
+      parsed &&
+      typeof parsed.idempotencyKey === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed.idempotencyKey) &&
+      parsed.payload &&
+      typeof parsed.payload.name === 'string' &&
+      parsed.payload.name.trim().length > 0 &&
+      parsed.payload.name.trim().length <= 100 &&
+      typeof parsed.payload.phone === 'string' &&
+      typeof parsed.payload.district === 'string' &&
+      parsed.payload.district.trim().length > 0 &&
+      parsed.payload.district.trim().length <= 50 &&
+      typeof parsed.payload.upazila === 'string' &&
+      parsed.payload.upazila.trim().length > 0 &&
+      parsed.payload.upazila.trim().length <= 50 &&
+      (parsed.payload.area === null ||
+        (typeof parsed.payload.area === 'string' &&
+          parsed.payload.area.trim().length <= 100)) &&
+      typeof parsed.payload.address === 'string' &&
+      parsed.payload.address.trim().length > 0 &&
+      parsed.payload.address.trim().length <= 200 &&
+      (parsed.payload.customer_note === null ||
+        (typeof parsed.payload.customer_note === 'string' &&
+          parsed.payload.customer_note.trim().length <= 250)) &&
+      Array.isArray(parsed.payload.items) &&
+      parsed.payload.items.length > 0 &&
+      parsed.payload.items.every(
+        (item) =>
+          item &&
+          typeof item.id === 'string' &&
+          Number.isInteger(item.quantity) &&
+          item.quantity > 0
+      );
+
+    return valid ? parsed : { invalid: true };
+  } catch {
+    return { invalid: true };
+  }
+}
+
+function savePendingRequest(request) {
+  sessionStorage.setItem(
+    PENDING_REQUEST_KEY,
+    JSON.stringify(request)
+  );
+}
+
+function clearPendingRequest() {
+  sessionStorage.removeItem(PENDING_REQUEST_KEY);
+}
+function createIdempotencyKey() {
+  if (
+    typeof globalThis.crypto?.randomUUID !== 'function'
+  ) {
+    throw new Error(
+      'Secure UUID generation is unavailable in this browser.'
+    );
+  }
+
+  return globalThis.crypto.randomUUID();
+}
 function CheckoutPage() {
   const {
     selectedCartItems,
-    selectedCartCount,
-    selectedSubtotal,
     removeItemsFromCart,
   } = useCart();
 
   const location = useLocation();
-  const directProductId =
-    location.state?.directProductId || location.state?.directProduct?.id;
-  const isDirectCheckout = Boolean(directProductId);
-  const directProduct = isDirectCheckout
-    ? products.find((product) => product.id === directProductId)
-    : null;
+  const directProductId = location.state?.directProductId;
+  const directProduct =
+    location.state?.directProduct ||
+    (directProductId
+      ? products.find((product) => product.id === directProductId)
+      : null);
+
+  const isDirectCheckout = Boolean(directProduct);
 
   const checkoutItems = isDirectCheckout
-    ? (directProduct ? [{ ...directProduct, quantity: 1 }] : [])
+    ? [{ ...directProduct, quantity: 1 }]
     : selectedCartItems;
 
   const checkoutItemCount = checkoutItems.reduce(
@@ -56,12 +127,29 @@ function CheckoutPage() {
     upazila: '',
     area: '',
     address: '',
-    note: '',
+    customer_note: '',
   });
 
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAcknowledging, setIsAcknowledging] = useState(false);
   const [checkoutState, setCheckoutState] = useState(readCheckoutState);
+  const [pendingRequest, setPendingRequest] = useState(readPendingRequest);
+  const [trackingUrl, setTrackingUrl] = useState('');
+
+  useEffect(() => {
+    const match = window.location.hash.match(
+      /^#t=([A-Za-z0-9_-]{43})$/
+    );
+
+    if (!match) return;
+
+    const token = match[1];
+
+    setTrackingUrl(
+      `${window.location.origin}/track-order#t=${token}`
+    );
+  }, []);
 
   const updateField = (event) => {
     const { name, value } = event.target;
@@ -72,49 +160,109 @@ function CheckoutPage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (isSubmitting || checkoutItems.length === 0) return;
+    if (isSubmitting) return;
 
-    const phone = form.phone.replace(/[\s-]/g, '');
+    const isRetry =
+      pendingRequest &&
+      ['request_pending', 'outcome_unknown'].includes(
+        pendingRequest.status
+      );
 
-    if (
-      !form.name.trim() ||
-      !form.district.trim() ||
-      !form.upazila.trim() ||
-      !form.area.trim() ||
-      !form.address.trim()
-    ) {
-      setError('সব প্রয়োজনীয় তথ্য সঠিকভাবে পূরণ করুন।');
+    if (!isRetry && checkoutItems.length === 0) return;
+    if (pendingRequest && !isRetry) {
+      setError(
+        'আগের request-এর অবস্থা যাচাই করা যাচ্ছে না। নতুন order পাঠানো বন্ধ রাখা হয়েছে।'
+      );
       return;
     }
 
-    if (!/^01[3-9]\d{8}$/.test(phone)) {
-      setError('সঠিক ১১ সংখ্যার বাংলাদেশি মোবাইল নম্বর দিন।');
-      return;
-    }
+    let request = isRetry ? pendingRequest : null;
 
-    // Keep a snapshot of the selected products for this order.
-    const submittedItems = checkoutItems.map((item) => ({
-      id: item.id,
-      quantity: item.quantity,
-    }));
+    if (!request) {
+      const phone = form.phone.replace(/[\s-]/g, '');
+      const name = form.name.trim();
+      const district = form.district.trim();
+      const upazila = form.upazila.trim();
+      const area = form.area.trim();
+      const address = form.address.trim();
+      const customerNote = form.customer_note.trim();
+
+      if (!name || !district || !upazila || !address) {
+        setError('নাম, জেলা, উপজেলা ও সম্পূর্ণ ঠিকানা পূরণ করুন।');
+        return;
+      }
+
+      if (
+        name.length > 80 ||
+        district.length > 50 ||
+        upazila.length > 50 ||
+        area.length > 100 ||
+        address.length > 200 ||
+        customerNote.length > 250
+      ) {
+        setError('কোনো একটি তথ্য নির্ধারিত অক্ষরসীমা অতিক্রম করেছে।');
+        return;
+      }
+
+      if (!/^01[3-9]\d{8}$/.test(phone)) {
+        setError('সঠিক ১১ সংখ্যার বাংলাদেশি মোবাইল নম্বর দিন।');
+        return;
+      }
+
+      const submittedItems = checkoutItems.map((item) => ({
+        id: item.id,
+        quantity: item.quantity,
+      }));
+
+      try {
+        request = {
+          version: 1,
+          status: 'request_pending',
+          idempotencyKey: createIdempotencyKey(),
+          payload: {
+            name,
+            phone,
+            district,
+            upazila,
+            area: area || null,
+            address,
+            customer_note: customerNote || null,
+            items: submittedItems,
+          },
+          orderedProductIds: isDirectCheckout
+            ? []
+            : submittedItems.map((item) => item.id),
+          createdAt: new Date().toISOString(),
+        };
+
+        // Persist before making any network request.
+        savePendingRequest(request);
+        setPendingRequest(request);
+      } catch {
+        setError(
+          'Request নিরাপদে সংরক্ষণ করা যায়নি। তাই order পাঠানো হয়নি।'
+        );
+        return;
+      }
+    }
 
     setError('');
     setIsSubmitting(true);
 
-    const whatsappWindow = window.open('about:blank', '_blank');
+    let whatsappWindow = null;
+
+    try {
+      whatsappWindow = window.open('about:blank', '_blank');
+    } catch {
+      whatsappWindow = null;
+    }
 
     try {
       const { data, error: functionError } =
         await supabase.functions.invoke('create-order', {
           body: {
-            name: form.name.trim(),
-            phone,
-            district: form.district.trim(),
-            upazila: form.upazila.trim(),
-            area: form.area.trim(),
-            address: form.address.trim(),
-            note: form.note.trim(),
-            items: submittedItems,
+            ...request.payload,
+            idempotencyKey: request.idempotencyKey,
           },
         });
 
@@ -124,6 +272,28 @@ function CheckoutPage() {
 
       if (!data?.success || !data?.orderNumber) {
         throw new Error(data?.error || 'Order could not be saved.');
+      }
+
+      let verifiedTrackingUrl;
+
+      try {
+        const parsedTrackingUrl = new URL(data.trackingUrl);
+
+        if (
+          parsedTrackingUrl.protocol !== 'https:' ||
+          parsedTrackingUrl.origin !== window.location.origin ||
+          parsedTrackingUrl.username ||
+          parsedTrackingUrl.password ||
+          parsedTrackingUrl.pathname !== '/track-order' ||
+          parsedTrackingUrl.search ||
+          !/^#t=[A-Za-z0-9_-]{43}$/.test(parsedTrackingUrl.hash)
+        ) {
+          throw new Error('Invalid tracking URL.');
+        }
+
+        verifiedTrackingUrl = parsedTrackingUrl.toString();
+      } catch {
+        throw new Error('Invalid tracking link received from server.');
       }
 
       if (
@@ -147,17 +317,20 @@ function CheckoutPage() {
       );
 
       const message = [
-        '*ROYAL SHOP - NEW ORDER*',
+        `*${businessConfig.shortName} - NEW ORDER*`,
         '',
         `Order ID: ${orderId}`,
         '',
         '*CUSTOMER INFORMATION*',
-        `Name: ${form.name.trim()}`,
-        `Mobile: ${phone}`,
-        `District: ${form.district.trim()}`,
-        `Upazila: ${form.upazila.trim()}`,
-        `Area: ${form.area.trim()}`,
-        `Full Address: ${form.address.trim()}`,
+        `Name: ${request.payload.name}`,
+        `Mobile: ${request.payload.phone}`,
+        `District: ${request.payload.district}`,
+        `Upazila: ${request.payload.upazila}`,
+        ...(request.payload.area ? [`Area: ${request.payload.area}`] : []),
+        `Full Address: ${request.payload.address}`,
+        ...(request.payload.customer_note
+          ? [`Customer Note: ${request.payload.customer_note}`]
+          : []),
         '',
         '*ORDER ITEMS*',
         ...productLines,
@@ -168,8 +341,6 @@ function CheckoutPage() {
         `Estimated Total: Tk ${verifiedSubtotal} + Delivery Charge`,
         'Payment Method: Cash on Delivery',
         '',
-        `Special Note: ${form.note.trim() || 'None'}`,
-        '',
         'Please confirm this order and delivery charge.',
       ].join('\n');
 
@@ -178,15 +349,15 @@ function CheckoutPage() {
 
       const order = {
         orderId,
-        name: form.name.trim(),
-        phone,
-        district: form.district.trim(),
-        upazila: form.upazila.trim(),
-        area: form.area.trim(),
-        address: form.address.trim(),
-        note: form.note.trim(),
+        name: request.payload.name,
+        phone: request.payload.phone,
+        district: request.payload.district,
+        upazila: request.payload.upazila,
+        area: request.payload.area,
+        address: request.payload.address,
+        customer_note: request.payload.customer_note,
         items: verifiedItems,
-        orderedProductIds: isDirectCheckout ? [] : submittedItems.map((item) => item.id),
+        orderedProductIds: request.orderedProductIds,
         cartCount: verifiedItemCount,
         subtotal: verifiedSubtotal,
         deliveryCharge: data.deliveryCharge,
@@ -195,73 +366,148 @@ function CheckoutPage() {
         status: 'pending',
       };
 
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(order));
-      } catch (storageError) {
-        console.error('Session storage error:', storageError);
-        throw new Error('Order state could not be saved in this browser.');
-      }
+      // Save the confirmed server response before clearing the retry draft.
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(order));
 
+      clearPendingRequest();
+      setPendingRequest(null);
       setCheckoutState(order);
+      setTrackingUrl(verifiedTrackingUrl);
+
+      const trackingToken = new URL(verifiedTrackingUrl).hash.slice(3);
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${window.location.search}#t=${trackingToken}`
+      );
 
       if (whatsappWindow) {
-        whatsappWindow.location.href = whatsappUrl;
+        try {
+          whatsappWindow.location.href = whatsappUrl;
+        } catch {
+          // The saved order remains valid; the manual WhatsApp link is available.
+          whatsappWindow.close();
+        }
       }
     } catch (submitError) {
       console.error('Checkout submission error:', submitError);
+
+      const uncertainRequest = {
+        ...request,
+        status: 'outcome_unknown',
+      };
+
+      // Keep the same key and exact payload for a safe retry.
+      setPendingRequest(uncertainRequest);
+
+      try {
+        savePendingRequest(uncertainRequest);
+      } catch {
+        // The original request draft may still exist in sessionStorage.
+      }
 
       if (whatsappWindow) {
         whatsappWindow.close();
       }
 
       setError(
-        'অর্ডার সংরক্ষণ করা যায়নি। আপনার Cart অক্ষত আছে। অনুগ্রহ করে আবার চেষ্টা করুন।'
+        'Order তৈরি হয়েছে কি না নিশ্চিত হওয়া যায়নি। নতুন order পাঠাবেন না। একই request আবার চেষ্টা করুন। Cart অপরিবর্তিত আছে।'
       );
     } finally {
       setIsSubmitting(false);
     }
   };
+  const handleCustomerConfirmation = async () => {
+    if (!checkoutState || isAcknowledging) return;
 
-  const handleCustomerConfirmation = () => {
-    if (!checkoutState) return;
-
-    const completedOrder = {
-      ...checkoutState,
-      status: 'customer_confirmed',
-    };
+    setIsAcknowledging(true);
+    setError('');
 
     try {
+      const tokenMatch = window.location.hash.match(
+        /^#t=([A-Za-z0-9_-]{43})$/
+      );
+
+      if (!tokenMatch) {
+        throw new Error('Tracking token পাওয়া যায়নি।');
+      }
+
+      const { data, error: acknowledgementError } =
+        await supabase.functions.invoke('acknowledge-order', {
+          body: { token: tokenMatch[1] },
+        });
+
+      if (acknowledgementError) throw acknowledgementError;
+
+      if (!data?.success || !data?.acknowledged) {
+        throw new Error(
+          data?.error || 'Customer acknowledgement সংরক্ষণ করা যায়নি।'
+        );
+      }
+
+      const completedOrder = {
+        ...checkoutState,
+        status: 'customer_confirmed',
+      };
+
+      // Preserve the cart if local recovery data cannot be saved.
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(completedOrder));
+      clearPendingRequest();
+
+      setPendingRequest(null);
+
+      const orderedProductIds =
+        checkoutState.orderedProductIds ||
+        checkoutState.items.map((item) => item.id);
+
+      removeItemsFromCart(orderedProductIds);
+      setCheckoutState(completedOrder);
     } catch {
-      setError('Confirmation সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।');
+      setError(
+        'Confirmation server-এ সংরক্ষণ করা যায়নি। Cart অপরিবর্তিত আছে। আবার চেষ্টা করুন।'
+      );
+    } finally {
+      setIsAcknowledging(false);
+    }
+  };
+
+  const startNewOrder = (event) => {
+    const savedPending = readPendingRequest();
+
+    if (savedPending) {
+      event.preventDefault();
+      setError(
+        `আগের order request এখনো সংরক্ষিত আছে। নতুন order শুরু করার আগে ${businessConfig.name}-এর সঙ্গে যোগাযোগ করুন।`
+      );
       return;
     }
 
-    // Remove only the products included in this order.
-    const orderedProductIds =
-      checkoutState.orderedProductIds ||
-      checkoutState.items.map((item) => item.id);
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+      setCheckoutState(null);
+      setTrackingUrl('');
 
-    removeItemsFromCart(orderedProductIds);
-
-    setCheckoutState(completedOrder);
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${window.location.search}`
+      );
+    } catch {
+      event.preventDefault();
+      setError('আগের order state পরিষ্কার করা যায়নি। আবার চেষ্টা করুন।');
+    }
   };
-
-  const startNewOrder = () => {
-    sessionStorage.removeItem(STORAGE_KEY);
-  };
-
   if (checkoutState?.status === 'customer_confirmed') {
     return (
       <main className="rs-checkout-page">
         <div className="rs-checkout-container rs-order-result">
           <div className="rs-order-result-icon">✓</div>
-          <p className="rs-order-eyebrow">ROYAL SHOP</p>
+          <p className="rs-order-eyebrow">{businessConfig.shortName}</p>
           <h1>Thank You!</h1>
           <h2>Your Order Submission Is Acknowledged</h2>
           <p>
             আপনি জানিয়েছেন যে WhatsApp-এ অর্ডারটি পাঠিয়েছেন।
-            Royal Shop কর্তৃপক্ষের যাচাই ও নিশ্চিতকরণ এখনো বাকি।
+            {businessConfig.name} কর্তৃপক্ষের যাচাই ও নিশ্চিতকরণ এখনো বাকি।
           </p>
 
           <div className="rs-order-reference">
@@ -269,8 +515,19 @@ function CheckoutPage() {
             <strong>{checkoutState.orderId}</strong>
           </div>
 
+          {trackingUrl && (
+            <a
+              href={trackingUrl}
+              className="rs-checkout-primary"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Track Your Order
+            </a>
+          )}
+
           <p className="rs-order-status">
-            Status: Awaiting Royal Shop Confirmation
+            Status: Awaiting {businessConfig.name} Confirmation
           </p>
 
           <p className="rs-order-reminder">
@@ -295,13 +552,24 @@ function CheckoutPage() {
       <main className="rs-checkout-page">
         <div className="rs-checkout-container rs-order-result">
           <div className="rs-order-pending-icon">!</div>
-          <p className="rs-order-eyebrow">ROYAL SHOP</p>
+          <p className="rs-order-eyebrow">{businessConfig.shortName}</p>
           <h1>WhatsApp Order Pending</h1>
 
           <div className="rs-order-reference">
             <span>Your Order Reference</span>
             <strong>{checkoutState.orderId}</strong>
           </div>
+
+          {trackingUrl && (
+            <a
+              href={trackingUrl}
+              className="rs-checkout-primary"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Track Your Order
+            </a>
+          )}
 
           <p className="rs-order-instruction">
             WhatsApp খুলেছে। সেখানে অর্ডারের বার্তাটি দেখে
@@ -322,8 +590,11 @@ function CheckoutPage() {
             type="button"
             className="rs-order-confirm-button"
             onClick={handleCustomerConfirmation}
+            disabled={isAcknowledging}
           >
-            আমি WhatsApp-এ Send করেছি
+            {isAcknowledging
+              ? 'Confirmation সংরক্ষণ হচ্ছে...'
+              : 'আমি WhatsApp-এ Send করেছি'}
           </button>
 
           {error && <p className="rs-checkout-error">{error}</p>}
@@ -337,6 +608,60 @@ function CheckoutPage() {
     );
   }
 
+  if (pendingRequest) {
+    const canRetryPendingRequest =
+      !pendingRequest.invalid &&
+      ['request_pending', 'outcome_unknown'].includes(
+        pendingRequest.status
+      );
+
+    return (
+      <main className="rs-checkout-page">
+        <div className="rs-checkout-container rs-order-result">
+          <div className="rs-order-pending-icon">!</div>
+          <p className="rs-order-eyebrow">{businessConfig.shortName}</p>
+          <h1>Order Request Recovery</h1>
+
+          {pendingRequest.invalid ? (
+            <>
+              <p>
+                আগের order request-এর সংরক্ষিত তথ্য যাচাই করা যাচ্ছে না।
+                নিরাপত্তার জন্য নতুন order বা automatic retry বন্ধ রাখা হয়েছে।
+              </p>
+              <p className="rs-order-reminder">
+                {businessConfig.name} কর্তৃপক্ষের সঙ্গে যোগাযোগ করে আগের order-এর
+                অবস্থা যাচাই করুন।
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                আগের order request-এর ফলাফল নিশ্চিত নয়।
+                Database-এ order তৈরি হয়ে থাকতে পারে।
+              </p>
+              <p className="rs-order-reminder">
+                নতুন order তৈরি করবেন না। নিচের বাটনে চাপলে আগের একই
+                payload ও idempotency key দিয়ে retry হবে।
+              </p>
+
+              <button
+                type="button"
+                className="rs-checkout-primary"
+                onClick={handleSubmit}
+                disabled={isSubmitting || !canRetryPendingRequest}
+              >
+                {isSubmitting
+                  ? 'আগের request যাচাই হচ্ছে...'
+                  : 'একই request আবার চেষ্টা করুন'}
+              </button>
+            </>
+          )}
+
+          {error && <p className="rs-checkout-error">{error}</p>}
+        </div>
+      </main>
+    );
+  }
   if (checkoutItems.length === 0) {
     return (
       <main className="rs-checkout-page">
@@ -355,7 +680,7 @@ function CheckoutPage() {
     <main className="rs-checkout-page">
       <div className="rs-checkout-container">
         <div className="rs-checkout-heading">
-          <p>ROYAL SHOP</p>
+          <p>{businessConfig.shortName}</p>
           <h1>Checkout</h1>
           <span>Complete your details to place your order.</span>
         </div>
@@ -390,66 +715,64 @@ function CheckoutPage() {
                   maxLength={15}
                 />
               </label>
-            </section>
-
-            <section className="rs-checkout-section">
-              <h2>Delivery Address</h2>
-
-              <div className="rs-checkout-fields">
-                <label>
-                  District *
-                  <input
-                    name="district"
-                    value={form.district}
-                    onChange={updateField}
-                    placeholder="District"
-                    required
-                  />
-                </label>
-
-                <label>
-                  Upazila *
-                  <input
-                    name="upazila"
-                    value={form.upazila}
-                    onChange={updateField}
-                    placeholder="Upazila"
-                    required
-                  />
-                </label>
-              </div>
 
               <label>
-                Area / Village / Road *
+                District *
+                <input
+                  name="district"
+                  value={form.district}
+                  onChange={updateField}
+                  placeholder="Enter district"
+                  required
+                  maxLength={50}
+                />
+              </label>
+
+              <label>
+                Upazila *
+                <input
+                  name="upazila"
+                  value={form.upazila}
+                  onChange={updateField}
+                  placeholder="Enter upazila"
+                  required
+                  maxLength={50}
+                />
+              </label>
+
+              <label>
+                Area / Locality (Optional)
                 <input
                   name="area"
                   value={form.area}
                   onChange={updateField}
-                  placeholder="Area or village name"
-                  required
+                  placeholder="Village, union, area or locality"
+                  maxLength={100}
                 />
               </label>
 
               <label>
-                Full Address *
+                Full Delivery Address *
                 <textarea
                   name="address"
                   value={form.address}
                   onChange={updateField}
-                  placeholder="House number, road, landmark and other details"
+                  placeholder="House, road, village and nearby landmark"
                   rows={3}
                   required
+                  maxLength={200}
                 />
               </label>
 
               <label>
-                Order Note (Optional)
+                Customer Note (Optional)
                 <textarea
-                  name="note"
-                  value={form.note}
+                  name="customer_note"
+                  value={form.customer_note}
                   onChange={updateField}
-                  placeholder="Any additional delivery instructions?"
+                  placeholder="Any additional delivery instructions"
                   rows={2}
+                  maxLength={250}
                 />
               </label>
             </section>
@@ -475,7 +798,7 @@ function CheckoutPage() {
             </button>
 
             <p className="rs-checkout-disclaimer">
-              প্রথমে আপনার অর্ডার Royal Shop Database-এ সংরক্ষিত হবে।
+              প্রথমে আপনার অর্ডার {businessConfig.name} Database-এ সংরক্ষিত হবে।
               এরপর WhatsApp খুলবে। সেখানে Send চাপার পর এখানে ফিরে আসুন।
             </p>
           </form>
@@ -534,4 +857,21 @@ function CheckoutPage() {
 }
 
 export default CheckoutPage;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

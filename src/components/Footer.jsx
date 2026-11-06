@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { businessConfig } from '../config/business.config.js';
 
 export const Footer = () => {
   return (
@@ -7,10 +8,10 @@ export const Footer = () => {
         <div className="rs-footer-grid">
           <div>
             <Link to="/" className="rs-logo">
-              Royal Shop
+              {businessConfig.name}
             </Link>
             <p>
-              Little Care, Big Love. Premium baby care essentials for your family.
+              {businessConfig.tagline}. Premium baby care essentials for your family.
             </p>
           </div>
 
@@ -36,9 +37,10 @@ export const Footer = () => {
         </div>
 
         <div className="rs-copy">
-          <p>© {new Date().getFullYear()} Royal Shop. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} {businessConfig.name}. All rights reserved.</p>
         </div>
       </div>
     </footer>
   );
 };
+

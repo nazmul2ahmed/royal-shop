@@ -1,11 +1,76 @@
+import { businessConfig } from '../config/business.config.js';
+import React from 'react';
+
 import { useNavigate } from 'react-router-dom';
+
 import { supabase } from '../lib/supabase.js';
+
 import { useAdminAuth } from '../context/AdminAuthContext.jsx';
 import './AdminDashboardPage.css';
 
 function AdminDashboardPage() {
   const navigate = useNavigate();
   const { user } = useAdminAuth();
+
+  const [orderEnabled, setOrderEnabled] = React.useState(null);
+  const [orderLoading, setOrderLoading] = React.useState(true);
+  const [orderSaving, setOrderSaving] = React.useState(false);
+  const [orderError, setOrderError] = React.useState('');
+
+  React.useEffect(() => {
+    let active = true;
+
+    async function loadOrderSetting() {
+      const { data, error } = await supabase
+        .from('store_settings')
+        .select('public_order_enabled')
+        .eq('id', 1)
+        .single();
+
+      if (!active) return;
+
+      if (error || !data) {
+        setOrderError('Could not load online order settings.');
+      } else {
+        setOrderEnabled(data.public_order_enabled === true);
+      }
+
+      setOrderLoading(false);
+    }
+
+    loadOrderSetting();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleOrderToggle = async () => {
+    if (orderEnabled === null || orderSaving) return;
+
+    const nextValue = !orderEnabled;
+
+    setOrderSaving(true);
+    setOrderError('');
+
+    const { data, error } = await supabase
+      .from('store_settings')
+      .update({
+        public_order_enabled: nextValue,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', 1)
+      .select('public_order_enabled')
+      .single();
+
+    if (error || !data) {
+      setOrderError('Could not update online order settings.');
+    } else {
+      setOrderEnabled(data.public_order_enabled === true);
+    }
+
+    setOrderSaving(false);
+  };
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -22,7 +87,7 @@ function AdminDashboardPage() {
     <main className="rs-admin-dashboard">
       <header className="rs-admin-topbar">
         <div>
-          <strong>ROYAL SHOP</strong>
+          <strong>{businessConfig.shortName}</strong>
           <span>ADMIN PANEL</span>
         </div>
 
@@ -36,6 +101,55 @@ function AdminDashboardPage() {
           Logged in as: {user?.email}
         </p>
 
+        <section className="rs-order-control-card">
+          <div className="rs-order-control-info">
+            <span>🛒</span>
+            <div>
+              <h2>Public Order Control</h2>
+              <p>
+                Control whether customers can place orders
+                through the website.
+              </p>
+            </div>
+          </div>
+
+          <div className="rs-order-control-status" aria-live="polite">
+            {orderLoading ? (
+              <span>Loading order settings...</span>
+            ) : orderEnabled === null ? (
+              <span>Order status unavailable</span>
+            ) : (
+              <span>
+                Online Orders: <strong>
+                  {orderEnabled ? 'ENABLED' : 'DISABLED'}
+                </strong>
+              </span>
+            )}
+          </div>
+
+          {orderError && (
+            <p className="rs-order-control-error" role="alert">
+              {orderError}
+            </p>
+          )}
+
+          <button
+            type="button"
+            className="rs-order-control-button"
+            onClick={handleOrderToggle}
+            disabled={
+              orderLoading ||
+              orderSaving ||
+              orderEnabled === null
+            }
+          >
+            {orderSaving
+              ? 'Saving...'
+              : orderEnabled
+                ? 'Disable Online Orders'
+                : 'Enable Online Orders'}
+          </button>
+        </section>
         <div className="rs-admin-module-grid">
           <article
             className="rs-admin-product-link"
@@ -54,18 +168,39 @@ function AdminDashboardPage() {
             <small>Manage Products →</small>
           </article>
 
-          <article>
+          <article
+            className="rs-admin-product-link"
+            onClick={() => navigate('/admin/orders')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                navigate('/admin/orders');
+              }
+            }}
+          >
             <span>🛒</span>
             <h2>Orders</h2>
             <p>View and manage customer orders.</p>
-            <small>Coming next</small>
+            <small>Manage Orders →</small>
           </article>
 
-          <article>
+          <article
+            className="rs-admin-product-link"
+            onClick={() => navigate('/admin/categories')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                navigate('/admin/categories');
+              }
+            }}
+          >
             <span>🗂️</span>
             <h2>Categories</h2>
             <p>Organize your product categories.</p>
-            <small>Coming next</small>
+            <small>Manage Categories →</small>
           </article>
 
           <article>
@@ -81,4 +216,7 @@ function AdminDashboardPage() {
 }
 
 export default AdminDashboardPage;
+
+
+
 

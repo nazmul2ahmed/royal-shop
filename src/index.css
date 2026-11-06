@@ -8,8 +8,8 @@
   --border-color: #eee9df;
 
   font-family: Arial, sans-serif;
-  color: var(--text-color);
-  background: var(--soft-cream);
+  color: var(--theme-text);
+  background: var(--theme-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -29,7 +29,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--soft-cream);
+  background: var(--theme-bg);
 }
 
 #root {
@@ -78,4 +78,53 @@ img {
   color: #174D35;
   font-size: 12px;
   font-weight: 700;
+}
+
+/* Semantic Theme Colors — Light Mode */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --theme-bg: var(--soft-cream);
+  --theme-surface: #FFFFFF;
+  --theme-surface-alt: #F5F1E8;
+
+  --theme-text: #252B27;
+  --theme-text-muted: #747B72;
+
+  --theme-border: #EEE9DF;
+  --theme-input-bg: #FFFFFF;
+
+  --theme-primary: var(--royal-green);
+  --theme-secondary: var(--golden-yellow);
+
+  --theme-success: #218838;
+  --theme-warning: #D69E00;
+  --theme-danger: #DC3545;
+
+  --theme-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Semantic Theme Colors — Dark Mode */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --theme-bg: #18221D;
+  --theme-surface: #222E27;
+  --theme-surface-alt: #2C3931;
+
+  --theme-text: #E7F0E9;
+  --theme-text-muted: #B0BDB4;
+
+  --theme-border: #405047;
+  --theme-input-bg: #222E27;
+
+  --theme-primary: #75B995;
+  --theme-secondary: #E5BE62;
+
+  --theme-success: #75C995;
+  --theme-warning: #F0C45C;
+  --theme-danger: #F28B8B;
+
+  --theme-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 }

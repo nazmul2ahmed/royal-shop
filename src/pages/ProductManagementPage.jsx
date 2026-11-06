@@ -8,6 +8,7 @@ const initialForm = {
   slug: '',
   sku: '',
   category: '',
+  category_id: '',
   description: '',
   price: '',
   compare_at_price: '',
@@ -15,6 +16,7 @@ const initialForm = {
   image_url: '',
   tag: '',
   is_active: true,
+  is_featured: false,
   sort_order: '0',
 };
 
@@ -28,6 +30,28 @@ function makeSlug(value) {
 
 function ProductManagementPage() {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  async function loadCategories() {
+    setCategoriesLoading(true);
+
+    const { data, error: fetchError } = await supabase
+      .from('categories')
+      .select('id, name, is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+
+    if (fetchError) {
+      setError(getFriendlyError(fetchError));
+      setCategories([]);
+    } else {
+      setCategories(data || []);
+    }
+
+    setCategoriesLoading(false);
+  }
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
@@ -63,6 +87,7 @@ function ProductManagementPage() {
   }
   useEffect(() => {
     loadProducts();
+    loadCategories();
   }, []);
 
   function handleChange(event) {
@@ -91,6 +116,9 @@ function ProductManagementPage() {
       slug: product.slug || '',
       sku: product.sku || '',
       category: product.category || '',
+      category_id: product.category_id || categories.find(
+        (category) => category.name === product.category
+      )?.id || '',
       description: product.description || '',
       price: String(product.price ?? ''),
       compare_at_price: product.compare_at_price == null
@@ -100,6 +128,7 @@ function ProductManagementPage() {
       image_url: product.image_url || '',
       tag: product.tag || '',
       is_active: product.is_active,
+      is_featured: product.is_featured ?? false,
       sort_order: String(product.sort_order ?? 0),
     });
 
@@ -147,8 +176,17 @@ function ProductManagementPage() {
     const compareText = form.compare_at_price.trim();
     const sortText = form.sort_order.trim();
 
-    if (!form.name.trim() || !form.category.trim()) {
-      setError('Product Name এবং Category অবশ্যই দিতে হবে।');
+    if (!form.name.trim() || !form.category_id) {
+      setError('Product Name এবং Category অবশ্যই নির্বাচন করতে হবে।');
+      return;
+    }
+
+    const selectedCategory = categories.find(
+      (category) => category.id === form.category_id
+    );
+
+    if (!selectedCategory) {
+      setError('নির্বাচিত Category পাওয়া যায়নি। আবার নির্বাচন করুন।');
       return;
     }
 
@@ -212,7 +250,8 @@ function ProductManagementPage() {
       name: form.name.trim(),
       slug,
       sku: form.sku.trim() || null,
-      category: form.category.trim(),
+      category: selectedCategory.name,
+      category_id: selectedCategory.id,
       description: form.description.trim() || null,
       price,
       compare_at_price: compareAtPrice,
@@ -220,6 +259,7 @@ function ProductManagementPage() {
       image_url: form.image_url.trim() || null,
       tag: form.tag.trim() || null,
       is_active: form.is_active,
+      is_featured: form.is_featured,
       sort_order: sortOrder,
     };
 
@@ -359,14 +399,26 @@ function ProductManagementPage() {
 
             <label>
               Category *
-              <input
-                name="category"
-                value={form.category}
+              <select
+                name="category_id"
+                value={form.category_id}
                 onChange={handleChange}
                 required
-                maxLength={100}
-                placeholder="Baby Skincare"
-              />
+                disabled={categoriesLoading || categories.length === 0}
+              >
+                <option value="">
+                  {categoriesLoading
+                    ? 'Loading categories...'
+                    : categories.length === 0
+                      ? 'No active categories available'
+                      : 'Select a category'}
+                </option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label>
@@ -460,6 +512,16 @@ function ProductManagementPage() {
                 onChange={handleChange}
               />
               Active — visible to customers
+            </label>
+
+            <label className="rs-product-checkbox">
+              <input
+                name="is_featured"
+                type="checkbox"
+                checked={form.is_featured}
+                onChange={handleChange}
+              />
+              Featured — show on homepage
             </label>
           </div>
 
@@ -573,5 +635,14 @@ function ProductManagementPage() {
 }
 
 export default ProductManagementPage;
+
+
+
+
+
+
+
+
+
 
 

@@ -342,3 +342,20 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Product details navigation links */
+.rs-shop-art-link {
+  display: grid;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.rs-shop-card-info h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rs-shop-card-info h3 a:hover {
+  color: #286548;
+}

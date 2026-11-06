@@ -30,11 +30,32 @@ function ResetPasswordPage() {
     setLoading(true);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
 
-      if (!sessionData.session) {
+      if (sessionError) throw sessionError;
+
+      const sessionUserId = sessionData.session?.user?.id;
+
+      if (!sessionUserId) {
         throw new Error(
-          'Recovery Session পাওয়া যায়নি। নতুন Recovery Email পাঠান।'
+          'সক্রিয় Supabase Session পাওয়া যায়নি। নতুন Reset Email পাঠান।'
+        );
+      }
+
+      const { data: adminRecord, error: roleError } = await supabase
+        .from('admin_users')
+        .select('user_id')
+        .eq('user_id', sessionUserId)
+        .maybeSingle();
+
+      if (roleError) {
+        throw new Error('Admin permission যাচাই করা যায়নি।');
+      }
+
+      if (!adminRecord) {
+        throw new Error(
+          'এই Account-এর Password পরিবর্তনের অনুমতি নেই।'
         );
       }
 
@@ -44,11 +65,19 @@ function ResetPasswordPage() {
 
       if (updateError) throw updateError;
 
-      setSuccess('Password সফলভাবে পরিবর্তন হয়েছে.');
+      setSuccess(
+        'Password সফলভাবে পরিবর্তন হয়েছে। এখন Admin Login করুন।'
+      );
 
-      setTimeout(() => {
-        navigate('/admin/dashboard', { replace: true });
-      }, 1200);
+      const { error: signOutError } = await supabase.auth.signOut({
+        scope: 'local',
+      });
+
+      if (signOutError) {
+        console.error('Post-recovery sign out failed:', signOutError);
+      }
+
+      navigate('/admin', { replace: true });
     } catch (err) {
       setError(err.message || 'Password পরিবর্তন করা যায়নি।');
     } finally {
@@ -87,11 +116,20 @@ function ResetPasswordPage() {
             required
           />
 
-          {error && <p className="rs-reset-error">{error}</p>}
-          {success && <p className="rs-reset-success">{success}</p>}
+          {error && (
+            <p className="rs-reset-error" role="alert">
+              {error}
+            </p>
+          )}
+
+          {success && (
+            <p className="rs-reset-success" role="status">
+              {success}
+            </p>
+          )}
 
           <button type="submit" disabled={loading}>
-            {loading ? 'Updating...' : 'Update Password'}
+            {loading ? 'Verifying...' : 'Update Password'}
           </button>
         </form>
       </section>

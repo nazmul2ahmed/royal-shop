@@ -37,3 +37,6 @@ dist-ssr
 # Backup files
 *.bak
 *.bak.*
+
+# Local security and recovery backups
+/backups/

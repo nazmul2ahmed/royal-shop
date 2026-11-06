@@ -10,7 +10,7 @@ function AdminProtectedRoute({ children }) {
         minHeight: '100vh',
         display: 'grid',
         placeItems: 'center',
-        color: '#174D35'
+        color: 'var(--royal-green)'
       }}>
         Verifying Admin Access...
       </div>

@@ -5,31 +5,32 @@ const AdminAuthContext = createContext(null);
 
 export function AdminAuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [roleLoading, setRoleLoading] = useState(false);
+  const [adminCheck, setAdminCheck] = useState({
+    userId: null,
+    isAdmin: false,
+    checked: false,
+  });
+  const [recoveryUserId, setRecoveryUserId] = useState(null);
 
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!active) return;
-
-      if (error) {
-        console.error('Session check failed:', error);
-      }
-
-      setUser(data?.session?.user ?? null);
-      setSessionChecked(true);
-    });
-
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
 
       setUser(session?.user ?? null);
       setSessionChecked(true);
+
+      if (event === 'PASSWORD_RECOVERY' && session?.user?.id) {
+        setRecoveryUserId(session.user.id);
+      }
+
+      if (event === 'SIGNED_OUT') {
+        setRecoveryUserId(null);
+      }
     });
 
     return () => {
@@ -45,29 +46,55 @@ export function AdminAuthProvider({ children }) {
       if (!sessionChecked) return;
 
       if (!user) {
-        setIsAdmin(false);
-        setRoleLoading(false);
+        setAdminCheck({
+          userId: null,
+          isAdmin: false,
+          checked: true,
+        });
         return;
       }
 
-      setRoleLoading(true);
+      setAdminCheck({
+        userId: user.id,
+        isAdmin: false,
+        checked: false,
+      });
 
-      const { data, error } = await supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      try {
+        const { data, error } = await supabase
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-      if (!active) return;
+        if (!active) return;
 
-      if (error) {
-        console.error('Admin role check failed:', error);
-        setIsAdmin(false);
-      } else {
-        setIsAdmin(Boolean(data));
+        if (error) {
+          console.error('Admin role check failed:', error.message);
+          setAdminCheck({
+            userId: user.id,
+            isAdmin: false,
+            checked: true,
+          });
+          return;
+        }
+
+        setAdminCheck({
+          userId: user.id,
+          isAdmin: Boolean(data),
+          checked: true,
+        });
+      } catch (error) {
+        if (!active) return;
+
+        console.error('Admin role check exception:', error.message);
+
+        setAdminCheck({
+          userId: user.id,
+          isAdmin: false,
+          checked: true,
+        });
       }
-
-      setRoleLoading(false);
     }
 
     checkAdminRole();
@@ -77,12 +104,31 @@ export function AdminAuthProvider({ children }) {
     };
   }, [user, sessionChecked]);
 
+  const isAdmin = Boolean(
+    user &&
+    adminCheck.userId === user.id &&
+    adminCheck.checked &&
+    adminCheck.isAdmin
+  );
+
+  const loading = Boolean(
+    !sessionChecked ||
+    (
+      user &&
+      (
+        adminCheck.userId !== user.id ||
+        !adminCheck.checked
+      )
+    )
+  );
+
   return (
     <AdminAuthContext.Provider
       value={{
         user,
         isAdmin,
-        loading: !sessionChecked || roleLoading,
+        recoveryUserId,
+        loading,
       }}
     >
       {children}
